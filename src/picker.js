@@ -10,14 +10,8 @@ const {
   parsePluginContext,
   resolvePaneIdFromContext,
 } = require("./core");
-const { createOverlayParams, getCachedCellSize, setCachedCellSize } = require("./graphics");
-const {
-  HerdrRequestError,
-  paneGraphicsClearMany,
-  paneGraphicsInfo,
-  paneGraphicsSetMany,
-  paneLayout,
-} = require("./herdr");
+const { renderOverlay } = require("./renderer");
+const { paneLayout } = require("./herdr");
 
 function clearScreen() {
   process.stdout.write("\x1b[2J\x1b[H");
@@ -39,14 +33,6 @@ function renderStatus(status) {
     process.stdout.write(`${status.detail}\n`);
   }
   process.stdout.write("\nPress any key to close.");
-}
-
-function graphicsDisabledStatus() {
-  return {
-    title: "Jump",
-    message: "Pane graphics are disabled.",
-    detail: "Add [experimental] kitty_graphics = true to your Herdr config, then reload Herdr.",
-  };
 }
 
 function readKey() {
@@ -87,56 +73,10 @@ function keyToShortcut(key) {
   return key.toLowerCase();
 }
 
-async function renderHints(targets, options = {}) {
-  const env = options.env || process.env;
-  const sourcePaneId = options.sourcePaneId || null;
-  const controlPaneId = options.controlPaneId || env.HERDR_PANE_ID || null;
-  const graphicsInfoPaneId = (targets.find((target) => target.paneId !== sourcePaneId) || targets[0])?.paneId;
-  let sharedInfo = getCachedCellSize(env);
-  if (!sharedInfo && graphicsInfoPaneId) {
-    sharedInfo = await paneGraphicsInfo(graphicsInfoPaneId, env);
-    setCachedCellSize(sharedInfo, env);
-  }
-
-  const overlayParams = targets.map((target, index) => {
-    const graphicsPaneId = target.paneId === sourcePaneId && controlPaneId ? controlPaneId : target.paneId;
-    return createOverlayParams({ ...target, paneId: graphicsPaneId }, sharedInfo, index, { env });
-  });
-  try {
-    await paneGraphicsSetMany(overlayParams, env);
-  } catch (error) {
-    await clearHints(overlayParams.map((params) => params.pane_id), env);
-    throw error;
-  }
-
-  return overlayParams.map((params) => params.pane_id);
-}
-
-async function clearHints(paneIds, env = process.env) {
-  if (paneIds.length === 0) {
-    return;
-  }
-
-  try {
-    await paneGraphicsClearMany(paneIds, env);
-  } catch {
-    // Clearing is best-effort on exit; a stale hint is less harmful than blocking.
-  }
-}
-
-function isGraphicsDisabled(error) {
-  return error instanceof HerdrRequestError && error.code === "feature_disabled";
-}
-
-function parseJsonArray(value) {
-  const parsed = parsePluginContext(value);
-  return Array.isArray(parsed) ? parsed : [];
-}
-
-function scheduleFinish(targetPaneId, paneIds, env = process.env) {
+function scheduleFinish(targetPaneId, env = process.env) {
   const child = spawn(
     process.execPath,
-    [path.join(__dirname, "finish-selection.js"), targetPaneId || "", JSON.stringify([...new Set(paneIds)])],
+    [path.join(__dirname, "finish-selection.js"), targetPaneId || ""],
     {
       cwd: path.join(__dirname, ".."),
       detached: true,
@@ -149,8 +89,6 @@ function scheduleFinish(targetPaneId, paneIds, env = process.env) {
 
 async function main() {
   const restore = setupTerminal();
-  const renderedPaneIds = parseJsonArray(process.env.HERDR_JUMP_PRE_RENDERED_PANES_JSON);
-  let finishScheduled = false;
 
   try {
     const startupStatus = parsePluginContext(process.env.HERDR_JUMP_STATUS_JSON);
@@ -173,34 +111,32 @@ async function main() {
       return;
     }
 
-    try {
-      if (renderedPaneIds.length === 0) {
-        renderedPaneIds.push(
-          ...(await renderHints(targets, {
-            env: process.env,
-            sourcePaneId,
-          })),
-        );
-      }
-    } catch (error) {
-      if (isGraphicsDisabled(error)) {
-        renderStatus(graphicsDisabledStatus());
-        await waitForDismiss();
-        return;
-      }
-      throw error;
-    }
+    const draw = () => {
+      clearScreen();
+      process.stdout.write(
+        renderOverlay(targets, {
+          cols: process.stdout.columns,
+          rows: process.stdout.rows,
+          area: layout?.area,
+        }),
+      );
+      const footerRow = Math.max(0, (process.stdout.rows || layout?.area?.height || 24) - 1);
+      process.stdout.write(`\x1b[${footerRow + 1};1H\x1b[2K Press a key to jump · Esc to cancel`);
+    };
+
+    // The overlay pane is first sized to the existing focused pane and only
+    // resized to the full surface after the zoom renders, so draw now and
+    // re-draw on every terminal resize until the full frame is reached. This is
+    // what makes every pane's number render (not just the first).
+    draw();
+    process.stdout.on("resize", draw);
 
     const shortcutMap = new Map(targets.map((target) => [target.shortcut, target]));
     const key = process.stdin.isTTY ? await readKey() : targets[0].shortcut;
     const selected = shortcutMap.get(keyToShortcut(key));
 
-    scheduleFinish(selected?.paneId || "", renderedPaneIds, process.env);
-    finishScheduled = true;
+    scheduleFinish(selected?.paneId || "", process.env);
   } finally {
-    if (!finishScheduled) {
-      await clearHints(renderedPaneIds, process.env);
-    }
     clearScreen();
     restore();
   }
@@ -216,10 +152,6 @@ if (require.main === module) {
 }
 
 module.exports = {
-  clearHints,
-  graphicsDisabledStatus,
-  isGraphicsDisabled,
   keyToShortcut,
-  renderHints,
   scheduleFinish,
 };

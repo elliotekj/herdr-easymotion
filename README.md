@@ -14,14 +14,7 @@ Install the plugin:
 herdr plugin install elliotekj/herdr-easymotion
 ```
 
-Pane hints use Herdr's experimental Kitty graphics support. Enable it in your Herdr config:
-
-```toml
-[experimental]
-kitty_graphics = true
-```
-
-Reload or restart Herdr after changing the config.
+No additional configuration is required. The plugin renders pane hints using terminal graphics in a full-screen overlay.
 
 ## Usage
 

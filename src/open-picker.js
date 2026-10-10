@@ -3,7 +3,6 @@
 
 const { buildTargets, createStatus, parsePluginContext, resolvePaneIdFromContext } = require("./core");
 const { paneLayout, runHerdr } = require("./herdr");
-const { clearHints, graphicsDisabledStatus, isGraphicsDisabled, renderHints } = require("./picker");
 
 async function main() {
   const env = process.env;
@@ -17,19 +16,6 @@ async function main() {
     return;
   }
 
-  let renderedPaneIds = [];
-  let startupStatus = null;
-
-  try {
-    renderedPaneIds = await renderHints(targets, { env, sourcePaneId });
-  } catch (error) {
-    if (isGraphicsDisabled(error)) {
-      startupStatus = graphicsDisabledStatus();
-    } else {
-      throw error;
-    }
-  }
-
   const args = [
     "plugin",
     "pane",
@@ -39,32 +25,17 @@ async function main() {
     "--entrypoint",
     "picker",
     "--placement",
-    "popup",
-    "--width",
-    "0",
-    "--height",
-    "0",
+    "overlay",
     "--focus",
     "--env",
     `HERDR_JUMP_LAYOUT_JSON=${JSON.stringify(layout)}`,
-    "--env",
-    `HERDR_JUMP_PRE_RENDERED_PANES_JSON=${JSON.stringify(renderedPaneIds)}`,
   ];
-
-  if (startupStatus) {
-    args.push("--env", `HERDR_JUMP_STATUS_JSON=${JSON.stringify(startupStatus)}`);
-  }
 
   if (sourcePaneId) {
     args.push("--env", `HERDR_JUMP_SOURCE_PANE_ID=${sourcePaneId}`);
   }
 
-  try {
-    runHerdr(args, { env });
-  } catch (error) {
-    await clearHints(renderedPaneIds, env);
-    throw error;
-  }
+  runHerdr(args, { env });
 }
 
 main().catch((error) => {
