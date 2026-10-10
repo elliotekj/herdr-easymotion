@@ -174,42 +174,8 @@ function paneLayout(paneId, env = process.env) {
   return response.result?.layout ?? response.layout ?? response.result;
 }
 
-function paneList(env = process.env) {
-  return runHerdrJson(["pane", "list"], { env });
-}
-
 function focusPane(paneId, env = process.env) {
   return request("pane.focus", { pane_id: paneId }, { env });
-}
-
-async function paneGraphicsInfo(paneId, env = process.env) {
-  const response = await request("pane.graphics.info", { pane_id: paneId }, { env });
-  return response.result?.info ?? response.result ?? response;
-}
-
-function paneGraphicsSet(params, env = process.env) {
-  return request("pane.graphics.set", params, { env });
-}
-
-function paneGraphicsClear(paneId, env = process.env) {
-  return request("pane.graphics.clear", { pane_id: paneId }, { env });
-}
-
-async function settleRequests(requests) {
-  const settled = await Promise.allSettled(requests);
-  const failure = settled.find((result) => result.status === "rejected");
-  if (failure) {
-    throw failure.reason;
-  }
-  return settled.map((result) => result.value);
-}
-
-function paneGraphicsSetMany(paramsList, env = process.env) {
-  return settleRequests(paramsList.map((params) => paneGraphicsSet(params, env)));
-}
-
-function paneGraphicsClearMany(paneIds, env = process.env) {
-  return settleRequests([...new Set(paneIds)].map((paneId) => paneGraphicsClear(paneId, env)));
 }
 
 module.exports = {
@@ -217,16 +183,9 @@ module.exports = {
   HerdrRequestError,
   herdrBin,
   MAX_TIMEOUT_MS,
-  paneGraphicsClear,
-  paneGraphicsClearMany,
-  paneGraphicsInfo,
-  paneGraphicsSet,
-  paneGraphicsSetMany,
   paneLayout,
-  paneList,
   request,
   requestTimeoutMs,
   runHerdr,
   runHerdrJson,
-  settleRequests,
 };

@@ -6,7 +6,6 @@ const {
   buildTargets,
   createStatus,
   formatPaneLabel,
-  indexPaneInfo,
   parsePluginContext,
   resolvePaneIdFromContext,
   SHORTCUTS,
@@ -105,14 +104,6 @@ test("formatPaneLabel falls back through title, agent, cwd, and pane id", () => 
   assert.equal(formatPaneLabel({ pane_id: "w1:p1" }, { agent: "codex", agent_status: "idle" }), "codex idle");
   assert.equal(formatPaneLabel({ pane_id: "w1:p1" }, { foreground_cwd: "/tmp/project" }), "project");
   assert.equal(formatPaneLabel({ pane_id: "w1:p1" }, {}), "w1:p1");
-});
-
-test("indexPaneInfo accepts both wrapped and unwrapped pane list responses", () => {
-  const wrapped = indexPaneInfo({ result: { panes: [{ pane_id: "w1:p1", label: "one" }] } });
-  const unwrapped = indexPaneInfo({ panes: [{ pane_id: "w1:p2", label: "two" }] });
-
-  assert.equal(wrapped.get("w1:p1").label, "one");
-  assert.equal(unwrapped.get("w1:p2").label, "two");
 });
 
 test("truncateMiddle preserves bounds", () => {

@@ -8,7 +8,7 @@ const path = require("node:path");
 const { chmodSync, mkdtempSync, rmSync, writeFileSync } = require("node:fs");
 const { spawn } = require("node:child_process");
 
-const { MAX_TIMEOUT_MS, paneGraphicsSetMany, request, requestTimeoutMs, settleRequests } = require("../src/herdr");
+const { MAX_TIMEOUT_MS, request, requestTimeoutMs } = require("../src/herdr");
 
 function listen(server, socketPath) {
   return new Promise((resolve) => server.listen(socketPath, resolve));
@@ -107,89 +107,34 @@ test("requestTimeoutMs clamps values beyond Node's timer limit", () => {
   assert.equal(requestTimeoutMs({}, { HERDR_REQUEST_TIMEOUT_MS: "0" }), 5000);
 });
 
-test("pane graphics requests use independent connections and wait for every response", async () => {
+test("open-picker opens a full-size popup pane", async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), "herdr-easymotion-"));
-  const socketPath = path.join(dir, "herdr.sock");
-  const requests = [];
-  const server = net.createServer((socket) => {
-    socket.setEncoding("utf8");
-    socket.once("data", (chunk) => {
-      const payload = JSON.parse(chunk.trim());
-      requests.push(payload);
-      setTimeout(() => socket.end(JSON.stringify({ id: payload.id, result: { pane_id: payload.params.pane_id } }) + "\n"), 5);
-    });
-  });
-
-  await listen(server, socketPath);
-  try {
-    const responses = await paneGraphicsSetMany(
-      [
-        { pane_id: "w1:p1", format: "png", image_width: 1, image_height: 1 },
-        { pane_id: "w1:p2", format: "png", image_width: 1, image_height: 1 },
-      ],
-      { HERDR_SOCKET_PATH: socketPath },
-    );
-
-    assert.equal(requests.length, 2);
-    assert.deepEqual(responses.map((response) => response.result.pane_id).sort(), ["w1:p1", "w1:p2"]);
-  } finally {
-    await close(server);
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("settleRequests waits for all work before surfacing a failure", async () => {
-  const completed = [];
-  await assert.rejects(
-    settleRequests([
-      Promise.reject(new Error("first failed")),
-      new Promise((resolve) => setTimeout(() => {
-        completed.push("second");
-        resolve();
-      }, 10)),
-    ]),
-    /first failed/,
-  );
-  assert.deepEqual(completed, ["second"]);
-});
-
-test("open-picker clears rendered hints when the popup command fails", async () => {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "herdr-easymotion-"));
-  const socketPath = path.join(dir, "herdr.sock");
   const fakeHerdrPath = path.join(dir, "fake-herdr.js");
-  const methods = [];
-  const server = net.createServer((socket) => {
-    socket.setEncoding("utf8");
-    socket.once("data", (chunk) => {
-      const payload = JSON.parse(chunk.trim());
-      methods.push({ method: payload.method, paneId: payload.params.pane_id });
-      const result = payload.method === "pane.graphics.info" ? { cell_width_px: 9, cell_height_px: 18 } : { ok: true };
-      socket.end(JSON.stringify({ id: payload.id, result }) + "\n");
-    });
-  });
+  const logPath = path.join(dir, "args.json");
+
   writeFileSync(
     fakeHerdrPath,
-    `#!/usr/bin/env node\nconst args = process.argv.slice(2);\nif (args[0] === "pane" && args[1] === "layout") {\n  process.stdout.write(JSON.stringify({ result: { layout: { focused_pane_id: "w1:p1", zoomed: false, panes: [{ pane_id: "w1:p1", rect: { x: 0, y: 0, width: 80, height: 24 } }, { pane_id: "w1:p2", rect: { x: 80, y: 0, width: 80, height: 24 } }] } } }));\n  process.exit(0);\n}\nprocess.stderr.write("open failed");\nprocess.exit(1);\n`,
+    `#!/usr/bin/env node\nconst fs = require("fs");\nconst args = process.argv.slice(2);\nif (args[0] === "pane" && args[1] === "layout") {\n  process.stdout.write(JSON.stringify({ result: { layout: { focused_pane_id: "w1:p1", zoomed: false, panes: [{ pane_id: "w1:p1", rect: { x: 0, y: 0, width: 80, height: 24 } }, { pane_id: "w1:p2", rect: { x: 80, y: 0, width: 80, height: 24 } }] } } }));\n  process.exit(0);\n}\nif (args[0] === "plugin" && args[1] === "pane" && args[2] === "open") {\n  fs.writeFileSync(process.env.TEST_ARGS_FILE, JSON.stringify(args));\n  process.exit(0);\n}\nprocess.exit(1);\n`,
   );
   chmodSync(fakeHerdrPath, 0o755);
 
-  await listen(server, socketPath);
   try {
     const result = await runNode(path.join(__dirname, "..", "src", "open-picker.js"), {
       ...process.env,
       HERDR_BIN_PATH: fakeHerdrPath,
       HERDR_PANE_ID: "w1:p1",
       HERDR_PLUGIN_CONTEXT_JSON: JSON.stringify({ focused_pane_id: "w1:p1" }),
-      HERDR_SOCKET_PATH: socketPath,
-      HERDR_PLUGIN_STATE_DIR: path.join(dir, "state"),
+      TEST_ARGS_FILE: logPath,
     });
 
-    assert.equal(result.code, 1);
-    assert.match(result.stderr, /open failed/);
-    assert.deepEqual(methods.filter((entry) => entry.method === "pane.graphics.set").map((entry) => entry.paneId).sort(), ["w1:p1", "w1:p2"]);
-    assert.deepEqual(methods.filter((entry) => entry.method === "pane.graphics.clear").map((entry) => entry.paneId).sort(), ["w1:p1", "w1:p2"]);
+    assert.equal(result.code, 0);
+    const args = JSON.parse(require("node:fs").readFileSync(logPath, "utf8"));
+    const at = (flag) => args.indexOf(flag);
+    assert.ok(at("--placement") >= 0 && args[at("--placement") + 1] === "popup");
+    assert.ok(at("--width") >= 0 && args[at("--width") + 1] === "100%");
+    assert.ok(at("--height") >= 0 && args[at("--height") + 1] === "100%");
+    assert.ok(!args.includes("overlay"));
   } finally {
-    await close(server);
     rmSync(dir, { recursive: true, force: true });
   }
 });

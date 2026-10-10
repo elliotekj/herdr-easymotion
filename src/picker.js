@@ -2,22 +2,14 @@
 "use strict";
 
 const readline = require("node:readline");
-const { spawn } = require("node:child_process");
-const path = require("node:path");
 const {
   buildTargets,
   createStatus,
   parsePluginContext,
   resolvePaneIdFromContext,
 } = require("./core");
-const { createOverlayParams, getCachedCellSize, setCachedCellSize } = require("./graphics");
-const {
-  HerdrRequestError,
-  paneGraphicsClearMany,
-  paneGraphicsInfo,
-  paneGraphicsSetMany,
-  paneLayout,
-} = require("./herdr");
+const { renderOverlay } = require("./renderer");
+const { focusPane, paneLayout } = require("./herdr");
 
 function clearScreen() {
   process.stdout.write("\x1b[2J\x1b[H");
@@ -39,14 +31,6 @@ function renderStatus(status) {
     process.stdout.write(`${status.detail}\n`);
   }
   process.stdout.write("\nPress any key to close.");
-}
-
-function graphicsDisabledStatus() {
-  return {
-    title: "Jump",
-    message: "Pane graphics are disabled.",
-    detail: "Add [experimental] kitty_graphics = true to your Herdr config, then reload Herdr.",
-  };
 }
 
 function readKey() {
@@ -87,70 +71,8 @@ function keyToShortcut(key) {
   return key.toLowerCase();
 }
 
-async function renderHints(targets, options = {}) {
-  const env = options.env || process.env;
-  const sourcePaneId = options.sourcePaneId || null;
-  const controlPaneId = options.controlPaneId || env.HERDR_PANE_ID || null;
-  const graphicsInfoPaneId = (targets.find((target) => target.paneId !== sourcePaneId) || targets[0])?.paneId;
-  let sharedInfo = getCachedCellSize(env);
-  if (!sharedInfo && graphicsInfoPaneId) {
-    sharedInfo = await paneGraphicsInfo(graphicsInfoPaneId, env);
-    setCachedCellSize(sharedInfo, env);
-  }
-
-  const overlayParams = targets.map((target, index) => {
-    const graphicsPaneId = target.paneId === sourcePaneId && controlPaneId ? controlPaneId : target.paneId;
-    return createOverlayParams({ ...target, paneId: graphicsPaneId }, sharedInfo, index, { env });
-  });
-  try {
-    await paneGraphicsSetMany(overlayParams, env);
-  } catch (error) {
-    await clearHints(overlayParams.map((params) => params.pane_id), env);
-    throw error;
-  }
-
-  return overlayParams.map((params) => params.pane_id);
-}
-
-async function clearHints(paneIds, env = process.env) {
-  if (paneIds.length === 0) {
-    return;
-  }
-
-  try {
-    await paneGraphicsClearMany(paneIds, env);
-  } catch {
-    // Clearing is best-effort on exit; a stale hint is less harmful than blocking.
-  }
-}
-
-function isGraphicsDisabled(error) {
-  return error instanceof HerdrRequestError && error.code === "feature_disabled";
-}
-
-function parseJsonArray(value) {
-  const parsed = parsePluginContext(value);
-  return Array.isArray(parsed) ? parsed : [];
-}
-
-function scheduleFinish(targetPaneId, paneIds, env = process.env) {
-  const child = spawn(
-    process.execPath,
-    [path.join(__dirname, "finish-selection.js"), targetPaneId || "", JSON.stringify([...new Set(paneIds)])],
-    {
-      cwd: path.join(__dirname, ".."),
-      detached: true,
-      env,
-      stdio: "ignore",
-    },
-  );
-  child.unref();
-}
-
 async function main() {
   const restore = setupTerminal();
-  const renderedPaneIds = parseJsonArray(process.env.HERDR_JUMP_PRE_RENDERED_PANES_JSON);
-  let finishScheduled = false;
 
   try {
     const startupStatus = parsePluginContext(process.env.HERDR_JUMP_STATUS_JSON);
@@ -173,34 +95,31 @@ async function main() {
       return;
     }
 
-    try {
-      if (renderedPaneIds.length === 0) {
-        renderedPaneIds.push(
-          ...(await renderHints(targets, {
-            env: process.env,
-            sourcePaneId,
-          })),
-        );
-      }
-    } catch (error) {
-      if (isGraphicsDisabled(error)) {
-        renderStatus(graphicsDisabledStatus());
-        await waitForDismiss();
-        return;
-      }
-      throw error;
-    }
+    const draw = () => {
+      clearScreen();
+      process.stdout.write(
+        renderOverlay(targets, { cols: process.stdout.columns, rows: process.stdout.rows }),
+      );
+      const footerRow = Math.max(0, (process.stdout.rows || 24) - 1);
+      process.stdout.write(`\x1b[${footerRow + 1};1H\x1b[2K Press a key to jump · Esc to cancel`);
+    };
 
+    // Rendered into a 100% popup, so the grid matches the layout and panes draw
+    // at their original coordinates. (A popup draws a 1-cell border inset, so the
+    // map sits a couple cells in from the true screen edge — fine for an opaque
+    // blueprint that isn't aligned to the hidden panes.)
+    draw();
+
+    // The popup covers the screen but owns no pane focus, so focusing the target
+    // before we exit persists once the popup closes; a cancel leaves focus as-is.
     const shortcutMap = new Map(targets.map((target) => [target.shortcut, target]));
     const key = process.stdin.isTTY ? await readKey() : targets[0].shortcut;
     const selected = shortcutMap.get(keyToShortcut(key));
 
-    scheduleFinish(selected?.paneId || "", renderedPaneIds, process.env);
-    finishScheduled = true;
-  } finally {
-    if (!finishScheduled) {
-      await clearHints(renderedPaneIds, process.env);
+    if (selected) {
+      await focusPane(selected.paneId, process.env).catch(() => {});
     }
+  } finally {
     clearScreen();
     restore();
   }
@@ -216,10 +135,5 @@ if (require.main === module) {
 }
 
 module.exports = {
-  clearHints,
-  graphicsDisabledStatus,
-  isGraphicsDisabled,
   keyToShortcut,
-  renderHints,
-  scheduleFinish,
 };

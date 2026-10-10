@@ -1,6 +1,6 @@
 id = "com.elliotekj.herdr-easymotion"
 name = "Herdr EasyMotion"
-version = "0.1.0"
+version = "0.2.0"
 min_herdr_version = "0.7.4"
 description = "Jump directly between visible panes in the active Herdr tab."
 platforms = ["linux", "macos", "windows"]
@@ -15,6 +15,6 @@ command = ["node", "src/open-picker.js"]
 id = "picker"
 title = "\u200B"
 placement = "popup"
-width = 0
-height = 0
+width = "100%"
+height = "100%"
 command = ["node", "src/picker.js"]
