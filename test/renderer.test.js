@@ -12,7 +12,6 @@ const {
   computeScale,
   cursorTo,
   renderOverlay,
-  renderHints,
   renderPaneFrame,
   renderPaneHint,
   terminalBounds,
@@ -85,20 +84,6 @@ test("renderPaneHint bounds a large pane to a small glyph", () => {
     const col = Number(match[2]) - 1;
     assert.ok(row >= 0 && row < 110, `row ${row} out of bounds`);
     assert.ok(col >= 0 && col < 190, `col ${col} out of bounds`);
-  }
-});
-
-test("renderHints never writes past the terminal bounds", () => {
-  const targets = [
-    { shortcut: "1", paneId: "w1:p1", rect: { x: 0, y: 0, width: 95, height: 110 } },
-    { shortcut: "2", paneId: "w1:p2", rect: { x: 95, y: 0, width: 95, height: 110 } },
-  ];
-  const output = renderHints(targets, { cols: 190, rows: 110 });
-  for (const match of output.matchAll(/\x1b\[(\d+);(\d+)H/g)) {
-    const row = Number(match[1]) - 1;
-    const col = Number(match[2]) - 1;
-    assert.ok(row >= 0 && row < 110);
-    assert.ok(col >= 0 && col < 190);
   }
 });
 

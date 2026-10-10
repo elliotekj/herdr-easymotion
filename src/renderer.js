@@ -223,15 +223,6 @@ function renderOverlay(targets, options = {}) {
   return output;
 }
 
-// Badge-only rendering (no frame), kept for tests and the non-framed path.
-function renderHints(targets, options = {}) {
-  let output = "";
-  for (let i = 0; i < targets.length; i++) {
-    output += renderPaneHint(targets[i], i, options);
-  }
-  return output;
-}
-
 module.exports = {
   GLYPHS,
   HINT_COLORS,
@@ -242,7 +233,6 @@ module.exports = {
   computeScale,
   cursorTo,
   renderOverlay,
-  renderHints,
   renderPaneFrame,
   renderPaneHint,
   terminalBounds,

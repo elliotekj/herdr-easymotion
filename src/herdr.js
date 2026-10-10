@@ -174,10 +174,6 @@ function paneLayout(paneId, env = process.env) {
   return response.result?.layout ?? response.layout ?? response.result;
 }
 
-function paneList(env = process.env) {
-  return runHerdrJson(["pane", "list"], { env });
-}
-
 function focusPane(paneId, env = process.env) {
   return request("pane.focus", { pane_id: paneId }, { env });
 }
@@ -188,7 +184,6 @@ module.exports = {
   herdrBin,
   MAX_TIMEOUT_MS,
   paneLayout,
-  paneList,
   request,
   requestTimeoutMs,
   runHerdr,

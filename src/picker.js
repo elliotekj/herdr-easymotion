@@ -2,8 +2,6 @@
 "use strict";
 
 const readline = require("node:readline");
-const { spawn } = require("node:child_process");
-const path = require("node:path");
 const {
   buildTargets,
   createStatus,
@@ -11,7 +9,7 @@ const {
   resolvePaneIdFromContext,
 } = require("./core");
 const { renderOverlay } = require("./renderer");
-const { paneLayout } = require("./herdr");
+const { focusPane, paneLayout } = require("./herdr");
 
 function clearScreen() {
   process.stdout.write("\x1b[2J\x1b[H");
@@ -73,20 +71,6 @@ function keyToShortcut(key) {
   return key.toLowerCase();
 }
 
-function scheduleFinish(targetPaneId, env = process.env) {
-  const child = spawn(
-    process.execPath,
-    [path.join(__dirname, "finish-selection.js"), targetPaneId || ""],
-    {
-      cwd: path.join(__dirname, ".."),
-      detached: true,
-      env,
-      stdio: "ignore",
-    },
-  );
-  child.unref();
-}
-
 async function main() {
   const restore = setupTerminal();
 
@@ -121,15 +105,20 @@ async function main() {
     };
 
     // Rendered into a 100% popup, so the grid matches the layout and panes draw
-    // at their original coordinates. If the grid ever changes, re-draw.
+    // at their original coordinates. (A popup draws a 1-cell border inset, so the
+    // map sits a couple cells in from the true screen edge — fine for an opaque
+    // blueprint that isn't aligned to the hidden panes.)
     draw();
-    process.stdout.on("resize", draw);
 
+    // The popup covers the screen but owns no pane focus, so focusing the target
+    // before we exit persists once the popup closes; a cancel leaves focus as-is.
     const shortcutMap = new Map(targets.map((target) => [target.shortcut, target]));
     const key = process.stdin.isTTY ? await readKey() : targets[0].shortcut;
     const selected = shortcutMap.get(keyToShortcut(key));
 
-    scheduleFinish(selected?.paneId || "", process.env);
+    if (selected) {
+      await focusPane(selected.paneId, process.env).catch(() => {});
+    }
   } finally {
     clearScreen();
     restore();
@@ -147,5 +136,4 @@ if (require.main === module) {
 
 module.exports = {
   keyToShortcut,
-  scheduleFinish,
 };

@@ -125,15 +125,6 @@ function buildTargets(layout, paneInfoById = new Map(), sourcePaneId = null, opt
     });
 }
 
-function indexPaneInfo(paneListResponse) {
-  const panes = paneListResponse?.result?.panes ?? paneListResponse?.panes ?? [];
-  return new Map(
-    panes
-      .filter((pane) => pane && typeof pane.pane_id === "string")
-      .map((pane) => [pane.pane_id, pane]),
-  );
-}
-
 function createStatus(layout, targets, sourcePaneId) {
   if (layout?.zoomed) {
     return {
@@ -167,7 +158,6 @@ module.exports = {
   buildTargets,
   createStatus,
   formatPaneLabel,
-  indexPaneInfo,
   parsePluginContext,
   resolvePaneIdFromContext,
   sortLayoutPanes,
