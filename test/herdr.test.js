@@ -107,7 +107,7 @@ test("requestTimeoutMs clamps values beyond Node's timer limit", () => {
   assert.equal(requestTimeoutMs({}, { HERDR_REQUEST_TIMEOUT_MS: "0" }), 5000);
 });
 
-test("open-picker opens an overlay pane", async () => {
+test("open-picker opens a full-size popup pane", async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), "herdr-easymotion-"));
   const fakeHerdrPath = path.join(dir, "fake-herdr.js");
   const logPath = path.join(dir, "args.json");
@@ -129,15 +129,17 @@ test("open-picker opens an overlay pane", async () => {
 
     assert.equal(result.code, 0);
     const args = JSON.parse(require("node:fs").readFileSync(logPath, "utf8"));
-    assert.ok(args.includes("--placement"));
-    assert.ok(args.includes("overlay"));
-    assert.ok(!args.includes("popup"));
+    const at = (flag) => args.indexOf(flag);
+    assert.ok(at("--placement") >= 0 && args[at("--placement") + 1] === "popup");
+    assert.ok(at("--width") >= 0 && args[at("--width") + 1] === "100%");
+    assert.ok(at("--height") >= 0 && args[at("--height") + 1] === "100%");
+    assert.ok(!args.includes("overlay"));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("open-picker does not open an overlay when jumping is unavailable", async () => {
+test("open-picker does not open a popup when jumping is unavailable", async () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), "herdr-easymotion-"));
   const fakeHerdrPath = path.join(dir, "fake-herdr.js");
   writeFileSync(

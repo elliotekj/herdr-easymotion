@@ -25,8 +25,11 @@ async function main() {
     "--entrypoint",
     "picker",
     "--placement",
-    "overlay",
-    "--focus",
+    "popup",
+    "--width",
+    "100%",
+    "--height",
+    "100%",
     "--env",
     `HERDR_JUMP_LAYOUT_JSON=${JSON.stringify(layout)}`,
   ];

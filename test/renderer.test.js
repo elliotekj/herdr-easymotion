@@ -15,8 +15,6 @@ const {
   renderHints,
   renderPaneFrame,
   renderPaneHint,
-  fitScale,
-  mapRect,
   terminalBounds,
 } = require("../src/renderer");
 
@@ -143,59 +141,45 @@ test("renderOverlay draws a frame and a bounded badge for every pane", () => {
   assert.ok(output.includes(ansiBg(...HINT_COLORS[1])));
 });
 
-test("fitScale is identity when the grid matches the area or is unknown", () => {
-  const id = { scale: 1, offsetX: 0, offsetY: 0 };
-  assert.deepEqual(fitScale({ width: 180, height: 28 }, { cols: 180, rows: 28 }), id);
-  assert.deepEqual(fitScale(undefined, { cols: 180, rows: 28 }), id);
-  assert.deepEqual(fitScale({ width: 180, height: 28 }, { cols: Infinity, rows: Infinity }), id);
-});
-
-test("fitScale uses a single uniform factor and centers (preserves proportions)", () => {
-  const fit = fitScale({ width: 180, height: 40 }, { cols: 60, rows: 40 });
-  // Uniform factor = min(60/180, 40/40) = 1/3, centered vertically (blank top/bottom).
-  assert.ok(Math.abs(fit.scale - 1 / 3) < 1e-9, `scale should be 1/3, got ${fit.scale}`);
-  assert.ok(fit.offsetX >= 0 && fit.offsetY >= 0);
-  // Offsets keep the scaled 180x40 block inside a 60x40 grid.
-  assert.ok(fit.offsetX + 180 * fit.scale <= 60 + 1);
-  assert.ok(fit.offsetY + 40 * fit.scale <= 40 + 1);
-});
-
-test("renderOverlay preserves pane proportions when scaled into a smaller grid", () => {
-  const area = { width: 180, height: 60 };
-  const fit = fitScale(area, { cols: 60, rows: 20 });
-  const rects = {
-    left: { x: 0, y: 0, width: 60, height: 60 },
-    topRight: { x: 60, y: 0, width: 120, height: 30 },
-  };
-  // Uniform scale: each mapped dimension must equal round(dim*scale) within 1 cell,
-  // and width/height must use the SAME factor (no per-axis stretching).
-  for (const rect of Object.values(rects)) {
-    const m = mapRect(rect, fit);
-    assert.ok(Math.abs(m.width - rect.width * fit.scale) <= 1);
-    assert.ok(Math.abs(m.height - rect.height * fit.scale) <= 1);
-    const wx = m.width / rect.width;
-    const hy = m.height / rect.height;
-    assert.ok(Math.abs(wx - hy) < 0.1, `x factor ${wx} != y factor ${hy} (distortion)`);
-  }
-});
-
-test("renderOverlay still draws every pane within a smaller grid", () => {
-  const area = { width: 180, height: 60 };
+test("renderOverlay draws panes at their ORIGINAL coordinates (no scaling)", () => {
   const targets = [
-    { shortcut: "1", paneId: "a", rect: { x: 0, y: 0, width: 60, height: 60 } },
-    { shortcut: "2", paneId: "b", rect: { x: 60, y: 0, width: 120, height: 30 } },
-    { shortcut: "3", paneId: "c", rect: { x: 60, y: 30, width: 120, height: 30 } },
+    { shortcut: "1", paneId: "a", rect: { x: 0, y: 0, width: 90, height: 28 } },
+    { shortcut: "2", paneId: "b", rect: { x: 90, y: 0, width: 90, height: 28 } },
   ];
-  const cols = 60, rows = 20;
-  const output = renderOverlay(targets, { cols, rows, area });
+  const output = renderOverlay(targets, { cols: 180, rows: 28 });
+
+  const anchors = [...output.matchAll(/\x1b\[(\d+);(\d+)H/g)].map((m) => [Number(m[1]) - 1, Number(m[2]) - 1]);
+  // Second pane's frame must appear at its true x (>= 90), proving no downscale.
+  assert.ok(anchors.some(([, c]) => c >= 90 && c < 180), "second pane at original coords");
+  assert.ok(anchors.some(([, c]) => c < 90), "first pane at original coords");
+  // Rightmost drawn column stays near the layout's real right edge (~179), not
+  // compressed toward the middle.
+  const maxCol = Math.max(...anchors.map(([, c]) => c));
+  assert.ok(maxCol >= 170, `expected near-full width, max col was ${maxCol}`);
+  for (const [row, col] of anchors) {
+    assert.ok(row >= 0 && row < 28);
+    assert.ok(col >= 0 && col < 180);
+  }
+  assert.ok(output.includes(ansiBg(...HINT_COLORS[0])));
+  assert.ok(output.includes(ansiBg(...HINT_COLORS[1])));
+});
+
+test("renderOverlay clamps to the live grid without rescaling geometry", () => {
+  // A full layout rendered into a grid that is a couple cells narrower (the
+  // 100% popup's border inset): geometry must stay true, only the far edge clips.
+  const targets = [
+    { shortcut: "1", paneId: "a", rect: { x: 0, y: 0, width: 80, height: 40 } },
+    { shortcut: "2", paneId: "b", rect: { x: 80, y: 0, width: 100, height: 40 } },
+  ];
+  const cols = 178, rows = 40; // area was 180x40
+  const output = renderOverlay(targets, { cols, rows });
 
   const anchors = [...output.matchAll(/\x1b\[(\d+);(\d+)H/g)].map((m) => [Number(m[1]) - 1, Number(m[2]) - 1]);
   for (const [row, col] of anchors) {
     assert.ok(row >= 0 && row < rows, `row ${row} out of grid`);
     assert.ok(col >= 0 && col < cols, `col ${col} out of grid`);
   }
-  assert.ok(output.includes(ansiBg(...HINT_COLORS[0])));
-  assert.ok(output.includes(ansiBg(...HINT_COLORS[1])));
-  assert.ok(output.includes(ansiBg(...HINT_COLORS[2])));
-  assert.ok(anchors.some(([, c]) => c >= cols / 2), "right panes must be drawn in-grid");
+  // Left pane still at x=0, second still starts near x=80 (not scaled down).
+  assert.ok(anchors.some(([, c]) => c < 10));
+  assert.ok(anchors.some(([, c]) => c >= 78 && c <= 82), "second pane not rescaled");
 });

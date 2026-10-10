@@ -202,50 +202,18 @@ function renderPaneHint(target, index, options = {}) {
   return output;
 }
 
-// Fit the source layout coordinates into the overlay's actual grid WITHOUT
-// distorting anything: pick a single uniform scale (same for x and y) and center
-// the map. When the grid matches the layout (the normal full-zoom case) the
-// scale is 1.0 and every pane keeps its exact original size; if the grid is
-// smaller, all panes shrink by the same factor so their proportions are preserved
-// rather than stretched.
-function fitScale(area, bounds) {
-  if (!area || !positiveInteger(area.width) || !positiveInteger(area.height)) {
-    return { scale: 1, offsetX: 0, offsetY: 0 };
-  }
-  if (!Number.isFinite(bounds.cols) || !Number.isFinite(bounds.rows)) {
-    return { scale: 1, offsetX: 0, offsetY: 0 };
-  }
-  const scale = Math.min(bounds.cols / area.width, bounds.rows / area.height);
-  const offsetX = Math.floor((bounds.cols - area.width * scale) / 2);
-  const offsetY = Math.floor((bounds.rows - area.height * scale) / 2);
-  return { scale, offsetX, offsetY };
-}
-
-function mapRect(rect, fit) {
-  if (fit.scale === 1 && fit.offsetX === 0 && fit.offsetY === 0) {
-    return rect;
-  }
-  return {
-    x: fit.offsetX + Math.round(rect.x * fit.scale),
-    y: fit.offsetY + Math.round(rect.y * fit.scale),
-    width: Math.max(1, Math.round(rect.width * fit.scale)),
-    height: Math.max(1, Math.round(rect.height * fit.scale)),
-  };
-}
-
-// Full overlay: frame every pane region, then draw each pane's bounded number
-// badge inside it. Used when herdr can only give the plugin an opaque surface.
+// Full overlay: frame every pane region and draw each pane's bounded number
+// badge inside it, at the panes' ORIGINAL coordinates (no scaling). The canvas
+// comes from a 100% popup, so it matches the layout; renderPaneFrame / renderPaneHint
+// clamp to the live grid, so at most a few border cells clip and sizes stay true.
 function renderOverlay(targets, options = {}) {
   const bounds = terminalBounds(options);
-  const fit = fitScale(options.area, bounds);
-  const fitted = targets.map((target) => ({ ...target, rect: mapRect(target.rect, fit) }));
-
   let output = "";
-  for (let i = 0; i < fitted.length; i++) {
-    output += renderPaneFrame(fitted[i].rect, bounds);
+  for (let i = 0; i < targets.length; i++) {
+    output += renderPaneFrame(targets[i].rect, bounds);
   }
-  for (let i = 0; i < fitted.length; i++) {
-    output += renderPaneHint(fitted[i], i, {
+  for (let i = 0; i < targets.length; i++) {
+    output += renderPaneHint(targets[i], i, {
       ...options,
       stdout: undefined,
       cols: bounds.cols,
@@ -277,7 +245,5 @@ module.exports = {
   renderHints,
   renderPaneFrame,
   renderPaneHint,
-  fitScale,
-  mapRect,
   terminalBounds,
 };

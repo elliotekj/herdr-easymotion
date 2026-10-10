@@ -114,20 +114,14 @@ async function main() {
     const draw = () => {
       clearScreen();
       process.stdout.write(
-        renderOverlay(targets, {
-          cols: process.stdout.columns,
-          rows: process.stdout.rows,
-          area: layout?.area,
-        }),
+        renderOverlay(targets, { cols: process.stdout.columns, rows: process.stdout.rows }),
       );
-      const footerRow = Math.max(0, (process.stdout.rows || layout?.area?.height || 24) - 1);
+      const footerRow = Math.max(0, (process.stdout.rows || 24) - 1);
       process.stdout.write(`\x1b[${footerRow + 1};1H\x1b[2K Press a key to jump · Esc to cancel`);
     };
 
-    // The overlay pane is first sized to the existing focused pane and only
-    // resized to the full surface after the zoom renders, so draw now and
-    // re-draw on every terminal resize until the full frame is reached. This is
-    // what makes every pane's number render (not just the first).
+    // Rendered into a 100% popup, so the grid matches the layout and panes draw
+    // at their original coordinates. If the grid ever changes, re-draw.
     draw();
     process.stdout.on("resize", draw);
 
