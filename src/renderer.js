@@ -58,10 +58,16 @@ const HINT_COLORS = [
 // scale grows to fill the whole pane, producing enormous overlapping glyphs.
 const MAX_SCALE = 3;
 
-// A glyph at scale 1 is 5x7 cells; a pane must clear at least this much room
-// before a framed hint is meaningful.
-const MIN_PANE_COLS = 6;
-const MIN_PANE_ROWS = 8;
+// Glyph bitmap dimensions. Every glyph is the same fixed grid, so the 5x7
+// assumption lives in exactly one place and both the size gates and the scaling
+// derive from it.
+const GLYPH_COLS = GLYPHS["1"][0].length; // 5
+const GLYPH_ROWS = GLYPHS["1"].length; // 7
+
+// A pane must clear at least a glyph plus one cell of margin before a framed
+// hint is meaningful.
+const MIN_PANE_COLS = GLYPH_COLS + 1;
+const MIN_PANE_ROWS = GLYPH_ROWS + 1;
 
 // Box-drawing used to sketch each pane region on the (opaque) overlay so the
 // number → pane mapping stays legible without see-through.
@@ -145,7 +151,7 @@ function renderPaneFrame(rect, bounds) {
   return out;
 }
 
-function renderPaneHint(target, index, options = {}) {
+function renderPaneHint(target, index, bounds) {
   const { rect, shortcut } = target;
   if (!positiveInteger(rect?.width) || !positiveInteger(rect?.height)) {
     return "";
@@ -154,14 +160,11 @@ function renderPaneHint(target, index, options = {}) {
     return "";
   }
 
-  const bounds = terminalBounds(options);
   const glyph = GLYPHS[shortcut] || GLYPHS["1"];
-  const glyphRows = glyph.length;
-  const glyphCols = glyph[0].length;
 
-  const scale = computeScale(rect, bounds, glyphCols, glyphRows);
-  const renderW = glyphCols * scale;
-  const renderH = glyphRows * scale;
+  const scale = computeScale(rect, bounds, GLYPH_COLS, GLYPH_ROWS);
+  const renderW = GLYPH_COLS * scale;
+  const renderH = GLYPH_ROWS * scale;
 
   const offsetX = rect.x + Math.floor((rect.width - renderW) / 2);
   const offsetY = rect.y + Math.floor((rect.height - renderH) / 2);
@@ -213,12 +216,7 @@ function renderOverlay(targets, options = {}) {
     output += renderPaneFrame(targets[i].rect, bounds);
   }
   for (let i = 0; i < targets.length; i++) {
-    output += renderPaneHint(targets[i], i, {
-      ...options,
-      stdout: undefined,
-      cols: bounds.cols,
-      rows: bounds.rows,
-    });
+    output += renderPaneHint(targets[i], i, bounds);
   }
   return output;
 }
@@ -227,11 +225,8 @@ module.exports = {
   GLYPHS,
   HINT_COLORS,
   MAX_SCALE,
-  ansiBg,
-  ansiReset,
   colorForIndex,
   computeScale,
-  cursorTo,
   renderOverlay,
   renderPaneFrame,
   renderPaneHint,

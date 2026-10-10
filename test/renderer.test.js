@@ -6,16 +6,17 @@ const {
   GLYPHS,
   HINT_COLORS,
   MAX_SCALE,
-  ansiBg,
-  ansiReset,
   colorForIndex,
   computeScale,
-  cursorTo,
   renderOverlay,
   renderPaneFrame,
   renderPaneHint,
   terminalBounds,
 } = require("../src/renderer");
+
+// The badge background SGR sequence for a given pane index, reconstructed from
+// HINT_COLORS so tests do not depend on the module's private ansiBg helper.
+const badgeColor = (i) => `\x1b[48;2;${HINT_COLORS[i].join(";")}m`;
 
 function rgbDistance(left, right) {
   return Math.hypot(left[0] - right[0], left[1] - right[1], left[2] - right[2]);
@@ -41,13 +42,6 @@ test("hint colors use high-contrast ANSI neighbors", () => {
 test("colorForIndex wraps around", () => {
   assert.deepEqual(colorForIndex(0), HINT_COLORS[0]);
   assert.deepEqual(colorForIndex(HINT_COLORS.length), HINT_COLORS[0]);
-});
-
-test("ansiBg / cursorTo produce expected escape codes", () => {
-  assert.equal(ansiBg(255, 128, 0), "\x1b[48;2;255;128;0m");
-  assert.equal(ansiReset(), "\x1b[0m");
-  assert.equal(cursorTo(0, 0), "\x1b[1;1H");
-  assert.equal(cursorTo(5, 10), "\x1b[6;11H");
 });
 
 test("computeScale caps scale at MAX_SCALE for large panes", () => {
@@ -122,8 +116,8 @@ test("renderOverlay draws a frame and a bounded badge for every pane", () => {
     assert.ok(row >= 0 && row < 28);
     assert.ok(col >= 0 && col < 180);
   }
-  assert.ok(output.includes(ansiBg(...HINT_COLORS[0])));
-  assert.ok(output.includes(ansiBg(...HINT_COLORS[1])));
+  assert.ok(output.includes(badgeColor(0)));
+  assert.ok(output.includes(badgeColor(1)));
 });
 
 test("renderOverlay draws panes at their ORIGINAL coordinates (no scaling)", () => {
@@ -145,8 +139,8 @@ test("renderOverlay draws panes at their ORIGINAL coordinates (no scaling)", () 
     assert.ok(row >= 0 && row < 28);
     assert.ok(col >= 0 && col < 180);
   }
-  assert.ok(output.includes(ansiBg(...HINT_COLORS[0])));
-  assert.ok(output.includes(ansiBg(...HINT_COLORS[1])));
+  assert.ok(output.includes(badgeColor(0)));
+  assert.ok(output.includes(badgeColor(1)));
 });
 
 test("renderOverlay clamps to the live grid without rescaling geometry", () => {
